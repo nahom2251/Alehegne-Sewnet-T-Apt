@@ -5,6 +5,10 @@ import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, dele
 
 import firebaseConfig from '../../firebase-applet-config.json';
 
+if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.includes('TODO')) {
+  console.error('Firebase configuration is missing or contains placeholders. Please set up Firebase in AI Studio.');
+}
+
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);

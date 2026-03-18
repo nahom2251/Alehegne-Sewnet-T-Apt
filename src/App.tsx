@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, writeBatch } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType, signInWithPopup, GoogleAuthProvider } from './lib/firebase';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { UserProfile, Apartment, Bill } from './types';
 import { INITIAL_APARTMENTS } from './constants';
 import { LanguageProvider } from './components/LanguageContext';
@@ -24,226 +22,372 @@ export default function App() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
 
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6 font-sans">
+        <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl border border-gray-100 text-center">
+          <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M10.776 20.245l-4.52-6.812a.75.75 0 011.247-.827l3.407 5.125 5.236-8.378a.75.75 0 011.27.794l-6.64 10.1zM12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zM3.5 12a8.5 8.5 0 1117 0 8.5 8.5 0 01-17 0z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Supabase Setup Required</h2>
+          <p className="text-gray-500 mb-8">Please add your Supabase credentials to the environment variables to continue.</p>
+          
+          <div className="space-y-4 text-left">
+            <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-xs font-bold text-gray-400 uppercase mb-2">Step 1: Get Credentials</p>
+              <p className="text-sm text-gray-600">Go to your Supabase Dashboard → Settings → API.</p>
+            </div>
+            <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-xs font-bold text-gray-400 uppercase mb-2">Step 2: Add Secrets</p>
+              <p className="text-sm text-gray-600">Open ⚙️ <strong>Settings</strong> → <strong>Secrets</strong> and add:</p>
+              <ul className="mt-2 space-y-1 text-xs font-mono text-gray-500">
+                <li>VITE_SUPABASE_URL</li>
+                <li>VITE_SUPABASE_ANON_KEY</li>
+              </ul>
+            </div>
+          </div>
+          <p className="mt-8 text-xs text-gray-400">The app will rebuild automatically after you add the secrets.</p>
+        </div>
+      </div>
+    );
+  }
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            setUser(userDoc.data() as UserProfile);
-          } else {
-            setUser(null);
-          }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-          setUser(null);
-        }
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        fetchUserProfile(session.user.id);
       } else {
-        setUser(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        fetchUserProfile(session.user.id);
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  // Data Listeners
+  const fetchUserProfile = async (uid: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('uid', uid)
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        setUser({
+          uid: data.uid,
+          email: data.email,
+          displayName: data.display_name,
+          role: data.role,
+          status: data.status,
+          createdAt: data.created_at,
+          hiddenModules: data.hidden_modules || [],
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Data Listeners (Realtime)
   useEffect(() => {
     if (!user || user.status !== 'approved') return;
 
-    const unsubApts = onSnapshot(collection(db, 'apartments'), (snapshot) => {
-      const apts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Apartment));
-      setApartments(apts.sort((a, b) => a.number.localeCompare(b.number)));
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'apartments'));
+    // Fetch initial data
+    fetchApartments();
+    fetchBills();
+    if (user.role === 'super_admin') fetchAllUsers();
 
-    const unsubBills = onSnapshot(query(collection(db, 'bills'), orderBy('createdAt', 'desc')), (snapshot) => {
-      const b = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bill));
-      setBills(b);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'bills'));
+    // Set up realtime subscriptions
+    const aptChannel = supabase
+      .channel('apartments-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'apartments' }, () => fetchApartments())
+      .subscribe();
 
-    let unsubUsers: () => void = () => {};
-    if (user.role === 'super_admin') {
-      unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-        const u = snapshot.docs.map(doc => doc.data() as UserProfile);
-        setAllUsers(u);
-      }, (err) => handleFirestoreError(err, OperationType.LIST, 'users'));
-    }
+    const billChannel = supabase
+      .channel('bills-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, () => fetchBills())
+      .subscribe();
+
+    const userChannel = supabase
+      .channel('users-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+        if (user.role === 'super_admin') fetchAllUsers();
+        fetchUserProfile(user.uid);
+      })
+      .subscribe();
 
     return () => {
-      unsubApts();
-      unsubBills();
-      unsubUsers();
+      supabase.removeChannel(aptChannel);
+      supabase.removeChannel(billChannel);
+      supabase.removeChannel(userChannel);
     };
-  }, [user]);
+  }, [user?.uid, user?.status, user?.role]);
+
+  const fetchApartments = async () => {
+    const { data, error } = await supabase
+      .from('apartments')
+      .select('*')
+      .order('number', { ascending: true });
+    
+    if (error) console.error('Error fetching apartments:', error);
+    else if (data) {
+      setApartments(data.map(a => ({
+        id: a.id,
+        number: a.number,
+        floor: a.floor,
+        position: a.position,
+        tenantName: a.tenant_name || '',
+        tenantPhone: a.tenant_phone || '',
+        moveInDate: a.move_in_date || '',
+        monthlyRent: Number(a.monthly_rent),
+        paymentDuration: a.payment_duration,
+        lastPaymentDate: a.last_payment_date || '',
+      })));
+    }
+  };
+
+  const fetchBills = async () => {
+    const { data, error } = await supabase
+      .from('bills')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) console.error('Error fetching bills:', error);
+    else if (data) {
+      setBills(data.map(b => ({
+        id: b.id,
+        apartmentId: b.apartment_id,
+        month: b.month,
+        year: b.year,
+        type: b.type,
+        amount: Number(b.amount),
+        status: b.status,
+        createdAt: b.created_at,
+        paidAt: b.paid_at || undefined,
+        kwh: b.kwh ? Number(b.kwh) : undefined,
+        rate: b.rate ? Number(b.rate) : undefined,
+      })));
+    }
+  };
+
+  const fetchAllUsers = async () => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*');
+    
+    if (error) console.error('Error fetching all users:', error);
+    else if (data) {
+      setAllUsers(data.map(u => ({
+        uid: u.uid,
+        email: u.email,
+        displayName: u.display_name,
+        role: u.role,
+        status: u.status,
+        createdAt: u.created_at,
+        hiddenModules: u.hidden_modules || [],
+      })));
+    }
+  };
 
   const handleLogin = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) throw error;
   };
 
   const handleRegister = async (email: string, pass: string, name: string) => {
-    const { user: firebaseUser } = await createUserWithEmailAndPassword(auth, email, pass);
-    await updateProfile(firebaseUser, { displayName: name });
-
-    const usersSnap = await getDocs(collection(db, 'users'));
-    const isFirstUser = usersSnap.empty;
-
-    const profile: UserProfile = {
-      uid: firebaseUser.uid,
+    const { data, error } = await supabase.auth.signUp({
       email,
-      displayName: name,
-      role: isFirstUser ? 'super_admin' : 'admin',
-      status: isFirstUser ? 'approved' : 'pending',
-      createdAt: new Date().toISOString(),
-    };
-
-    await setDoc(doc(db, 'users', firebaseUser.uid), profile);
-    setUser(profile);
-
-    if (isFirstUser) {
-      const batch = writeBatch(db);
-      INITIAL_APARTMENTS.forEach((apt) => {
-        const newDoc = doc(collection(db, 'apartments'));
-        batch.set(newDoc, apt);
-      });
-      await batch.commit();
+      password: pass,
+      options: {
+        data: { full_name: name },
+        emailRedirectTo: window.location.origin,
+      }
+    });
+    if (error) throw error;
+    
+    // The trigger in Supabase (handle_new_user) will create the profile.
+    // We just need to wait or manually fetch.
+    if (data.user) {
+      // Check if it's the first user to seed apartments
+      const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
+      if (count === 1) {
+        await seedInitialApartments();
+      }
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const seedInitialApartments = async () => {
+    const aptsToInsert = INITIAL_APARTMENTS.map(apt => ({
+      number: apt.number,
+      floor: apt.floor,
+      position: apt.position,
+      tenant_name: apt.tenantName,
+      tenant_phone: apt.tenantPhone,
+      move_in_date: apt.moveInDate || null,
+      monthly_rent: apt.monthlyRent,
+      payment_duration: apt.paymentDuration,
+    }));
+    const { error } = await supabase.from('apartments').insert(aptsToInsert);
+    if (error) console.error('Error seeding apartments:', error);
+  };
+
+  const handleLogout = () => supabase.auth.signOut();
 
   const handleGoogleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    const { user: firebaseUser } = await signInWithPopup(auth, provider);
-    
-    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-    if (!userDoc.exists()) {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const isFirstUser = usersSnap.empty;
-
-      const profile: UserProfile = {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        displayName: firebaseUser.displayName || 'User',
-        role: isFirstUser ? 'super_admin' : 'admin',
-        status: isFirstUser ? 'approved' : 'pending',
-        createdAt: new Date().toISOString(),
-      };
-
-      await setDoc(doc(db, 'users', firebaseUser.uid), profile);
-      setUser(profile);
-
-      if (isFirstUser) {
-        const batch = writeBatch(db);
-        INITIAL_APARTMENTS.forEach((apt) => {
-          const newDoc = doc(collection(db, 'apartments'));
-          batch.set(newDoc, apt);
-        });
-        await batch.commit();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
       }
-    } else {
-      setUser(userDoc.data() as UserProfile);
-    }
+    });
+    if (error) throw error;
   };
 
   const updateApartment = async (apt: Apartment) => {
-    const { id, ...data } = apt;
-    try {
-      await updateDoc(doc(db, 'apartments', id), data);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `apartments/${id}`);
-    }
+    const { error } = await supabase
+      .from('apartments')
+      .update({
+        number: apt.number,
+        floor: apt.floor,
+        position: apt.position,
+        tenant_name: apt.tenantName,
+        tenant_phone: apt.tenantPhone,
+        move_in_date: apt.moveInDate || null,
+        monthly_rent: apt.monthlyRent,
+        payment_duration: apt.paymentDuration,
+        last_payment_date: apt.lastPaymentDate || null,
+      })
+      .eq('id', apt.id);
+    
+    if (error) console.error('Error updating apartment:', error);
   };
 
   const deleteTenant = async (aptId: string) => {
-    try {
-      await updateDoc(doc(db, 'apartments', aptId), {
-        tenantName: '',
-        tenantPhone: '',
-        moveInDate: '',
-        monthlyRent: 0,
-        paymentDuration: 1
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `apartments/${aptId}`);
-    }
+    const { error } = await supabase
+      .from('apartments')
+      .update({
+        tenant_name: '',
+        tenant_phone: '',
+        move_in_date: null,
+        monthly_rent: 0,
+        payment_duration: 1
+      })
+      .eq('id', aptId);
+    
+    if (error) console.error('Error deleting tenant:', error);
   };
 
   const createBill = async (billData: Partial<Bill>) => {
-    try {
-      const newDoc = doc(collection(db, 'bills'));
-      await setDoc(newDoc, {
-        ...billData,
-        createdAt: new Date().toISOString()
+    const { error } = await supabase
+      .from('bills')
+      .insert({
+        apartment_id: billData.apartmentId,
+        month: billData.month,
+        year: billData.year,
+        type: billData.type,
+        amount: billData.amount,
+        status: billData.status || 'pending',
+        kwh: billData.kwh,
+        rate: billData.rate,
       });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'bills');
-    }
+    
+    if (error) console.error('Error creating bill:', error);
   };
 
   const markAsPaid = async (billId: string) => {
-    try {
-      await updateDoc(doc(db, 'bills', billId), {
+    const { error } = await supabase
+      .from('bills')
+      .update({
         status: 'paid',
-        paidAt: new Date().toISOString()
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `bills/${billId}`);
-    }
+        paid_at: new Date().toISOString()
+      })
+      .eq('id', billId);
+    
+    if (error) console.error('Error marking bill as paid:', error);
   };
 
   const updateBill = async (bill: Bill) => {
-    try {
-      const { id, ...data } = bill;
-      await updateDoc(doc(db, 'bills', id), data);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `bills/${bill.id}`);
-    }
+    const { error } = await supabase
+      .from('bills')
+      .update({
+        month: bill.month,
+        year: bill.year,
+        amount: bill.amount,
+        status: bill.status,
+        kwh: bill.kwh,
+        rate: bill.rate,
+      })
+      .eq('id', bill.id);
+    
+    if (error) console.error('Error updating bill:', error);
   };
 
   const deleteBill = async (billId: string) => {
-    try {
-      await deleteDoc(doc(db, 'bills', billId));
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `bills/${billId}`);
-    }
+    const { error } = await supabase
+      .from('bills')
+      .delete()
+      .eq('id', billId);
+    
+    if (error) console.error('Error deleting bill:', error);
   };
 
   const approveUser = async (uid: string) => {
-    try {
-      await updateDoc(doc(db, 'users', uid), { status: 'approved' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
-    }
+    const { error } = await supabase
+      .from('users')
+      .update({ status: 'approved' })
+      .eq('uid', uid);
+    
+    if (error) console.error('Error approving user:', error);
   };
 
   const rejectUser = async (uid: string) => {
-    try {
-      await updateDoc(doc(db, 'users', uid), { status: 'rejected' });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
-    }
+    const { error } = await supabase
+      .from('users')
+      .update({ status: 'rejected' })
+      .eq('uid', uid);
+    
+    if (error) console.error('Error rejecting user:', error);
   };
 
   const clearTenants = async (ids: string[]) => {
-    const batch = writeBatch(db);
-    ids.forEach(id => {
-      batch.update(doc(db, 'apartments', id), {
-        tenantName: '',
-        tenantPhone: '',
-        moveInDate: '',
-        monthlyRent: 0,
-        paymentDuration: 1
-      });
-    });
-    await batch.commit();
+    const { error } = await supabase
+      .from('apartments')
+      .update({
+        tenant_name: '',
+        tenant_phone: '',
+        move_in_date: null,
+        monthly_rent: 0,
+        payment_duration: 1
+      })
+      .in('id', ids);
+    
+    if (error) console.error('Error clearing tenants:', error);
   };
 
   const clearBills = async (ids: string[]) => {
-    const batch = writeBatch(db);
-    ids.forEach(id => {
-      batch.delete(doc(db, 'bills', id));
-    });
-    await batch.commit();
+    const { error } = await supabase
+      .from('bills')
+      .delete()
+      .in('id', ids);
+    
+    if (error) console.error('Error clearing bills:', error);
   };
 
   if (loading) {
@@ -272,12 +416,13 @@ export default function App() {
 
   const updateUserPreferences = async (hiddenModules: string[]) => {
     if (!user) return;
-    try {
-      await updateDoc(doc(db, 'users', user.uid), { hiddenModules });
-      setUser({ ...user, hiddenModules });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
-    }
+    const { error } = await supabase
+      .from('users')
+      .update({ hidden_modules: hiddenModules })
+      .eq('uid', user.uid);
+    
+    if (error) console.error('Error updating preferences:', error);
+    else setUser({ ...user, hiddenModules });
   };
 
   const renderTab = () => {

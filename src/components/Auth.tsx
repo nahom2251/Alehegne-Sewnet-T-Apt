@@ -31,7 +31,14 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, onRegister, onGoogleLogin }
         await onRegister(email, password, name);
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      console.error('Auth Error:', err);
+      let msg = err.message || 'An error occurred';
+      if (msg.includes('auth/unauthorized-domain')) {
+        msg = 'This domain is not authorized in Firebase. Please add your Render URL to the "Authorized Domains" in the Firebase Console (Authentication > Settings).';
+      } else if (msg.includes('auth/configuration-not-found')) {
+        msg = 'Firebase configuration error. Please check your API key and setup.';
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }

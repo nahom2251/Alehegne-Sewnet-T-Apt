@@ -31,20 +31,25 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isAuthenticated() && (
-        getUserData().role == 'super_admin' ||
-        (request.auth.token.email == "nahomalehegne@gmail.com" && request.auth.token.email_verified == true)
+        (request.auth.token.email == "nahomalehegne@gmail.com" && request.auth.token.email_verified == true) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin')
       );
     }
 
     function isAdmin() {
-      return isApproved() && (getUserData().role == 'admin' || getUserData().role == 'super_admin');
+      return isApproved() && (
+        getUserData().role == 'admin' || 
+        getUserData().role == 'super_admin'
+      );
     }
 
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'status', 'createdAt']) &&
              data.uid is string && data.email is string && data.displayName is string &&
              data.role in ['super_admin', 'admin'] &&
-             data.status in ['pending', 'approved', 'rejected'];
+             data.status in ['pending', 'approved', 'rejected'] &&
+             (!('hiddenModules' in data) || data.hiddenModules is list);
     }
 
     function isValidApartment(data) {
