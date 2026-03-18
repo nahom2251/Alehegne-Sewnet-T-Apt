@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useLanguage } from './LanguageContext';
 import { Eye, EyeOff, Mail, Lock, User, Globe } from 'lucide-react';
-import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { Logo } from './Logo';
 import { api } from '../services/api';
@@ -12,160 +11,185 @@ interface AuthProps {
 
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const { t, language, setLanguage } = useLanguage();
+
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ UPDATED HANDLE SUBMIT
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+
     try {
       if (isLogin) {
-        const { user } = await api.auth.login({ email, password });
-        onLogin(user);
+        const response = await api.auth.login({ email, password });
+
+        if (!response || !response.user) {
+          throw new Error("Invalid login response from server");
+        }
+
+        onLogin(response.user);
       } else {
         await api.auth.register({ email, password, name });
+
         setIsLogin(true);
         setError("Registration successful! Please login.");
       }
     } catch (err: any) {
-      console.error('Auth Error:', err);
-      setError(err.message || 'An error occurred');
+      console.error("Auth Error:", err);
+      setError(err.message || "An error occurred");
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
-    setError("Google login is not supported in this custom backend yet. Please use email/password.");
+    setError("Google login is not supported yet. Use email/password.");
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl shadow-gray-200/50 p-8 border border-gray-100 relative overflow-hidden">
-        {/* Background Accents */}
-        <div className="absolute top-0 right-0 w-32 h-32 bg-gold/5 rounded-full -mr-16 -mt-16" />
-        <div className="absolute bottom-0 left-0 w-24 h-24 bg-gold/5 rounded-full -ml-12 -mb-12" />
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border relative overflow-hidden">
 
-        <div className="text-center mb-8 relative">
+        {/* Background circles */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/5 rounded-full -mr-16 -mt-16" />
+        <div className="absolute bottom-0 left-0 w-24 h-24 bg-yellow-400/5 rounded-full -ml-12 -mb-12" />
+
+        <div className="text-center mb-8">
           <Logo size="lg" className="justify-center mb-6" showText={false} />
           <h1 className="text-2xl font-bold text-gray-900">{t('appName')}</h1>
-          <p className="text-gray-500 mt-2">{isLogin ? t('login') : t('register')}</p>
+          <p className="text-gray-500 mt-2">
+            {isLogin ? t('login') : t('register')}
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 relative">
+        <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Name (Register only) */}
           {!isLogin && (
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700 ml-1">{t('fullName')}</label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <div>
+              <label className="text-sm text-gray-700">{t('fullName')}</label>
+              <div className="relative mt-1">
+                <User className="absolute left-3 top-3 text-gray-400" size={18} />
                 <input
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gold/20 focus:border-gold outline-none transition-all"
+                  className="w-full pl-10 pr-4 py-3 border rounded-xl bg-gray-50 focus:outline-none"
                   placeholder="John Doe"
                 />
               </div>
             </div>
           )}
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 ml-1">{t('email')}</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          {/* Email */}
+          <div>
+            <label className="text-sm text-gray-700">{t('email')}</label>
+            <div className="relative mt-1">
+              <Mail className="absolute left-3 top-3 text-gray-400" size={18} />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gold/20 focus:border-gold outline-none transition-all"
+                className="w-full pl-10 pr-4 py-3 border rounded-xl bg-gray-50 focus:outline-none"
                 placeholder="admin@example.com"
               />
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 ml-1">{t('password')}</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          {/* Password */}
+          <div>
+            <label className="text-sm text-gray-700">{t('password')}</label>
+            <div className="relative mt-1">
+              <Lock className="absolute left-3 top-3 text-gray-400" size={18} />
               <input
-                type={showPassword ? 'text' : 'password'}
+                type={showPassword ? "text" : "password"}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gold/20 focus:border-gold outline-none transition-all"
+                className="w-full pl-10 pr-12 py-3 border rounded-xl bg-gray-50 focus:outline-none"
                 placeholder="••••••••"
               />
+
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gold transition-colors"
+                className="absolute right-3 top-3 text-gray-400"
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
 
+          {/* Error */}
           {error && (
             <motion.p
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              className="text-sm text-red-500 bg-red-50 p-3 rounded-lg border border-red-100"
+              className="text-sm text-red-500 bg-red-50 p-3 rounded-lg"
             >
               {error}
             </motion.p>
           )}
 
+          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-gold text-white font-bold rounded-xl shadow-lg shadow-gold/20 hover:bg-gold-dark transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-4"
+            className="w-full py-3 bg-yellow-500 text-white font-bold rounded-xl"
           >
-            {loading ? '...' : (isLogin ? t('login') : t('register'))}
+            {loading ? "..." : isLogin ? t('login') : t('register')}
           </button>
 
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-100"></div>
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-gray-400">Or continue with</span>
-            </div>
+          {/* Divider */}
+          <div className="text-center text-xs text-gray-400 my-4">
+            Or continue with
           </div>
 
+          {/* Google */}
           <button
             type="button"
             onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-3 shadow-sm"
+            className="w-full py-3 border rounded-xl flex justify-center items-center gap-2"
           >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-            Sign in with Google
+            <img
+              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+              className="w-5"
+            />
+            Google
           </button>
         </form>
 
-        <div className="mt-8 text-center space-y-4">
+        {/* Footer */}
+        <div className="mt-6 text-center">
           <button
             onClick={() => setIsLogin(!isLogin)}
-            className="text-sm text-gray-500 hover:text-gold transition-colors"
+            className="text-sm text-gray-500"
           >
-            {isLogin ? "Don't have an account? Register" : "Already have an account? Login"}
+            {isLogin
+              ? "Don't have an account? Register"
+              : "Already have an account? Login"}
           </button>
 
-          <div className="flex items-center justify-center gap-2 pt-4 border-t border-gray-100">
+          <div className="mt-4">
             <button
-              onClick={() => setLanguage(language === 'en' ? 'am' : 'en')}
-              className="flex items-center gap-2 text-xs text-gray-400 hover:text-gold transition-colors"
+              onClick={() =>
+                setLanguage(language === "en" ? "am" : "en")
+              }
+              className="text-xs text-gray-400 flex items-center justify-center gap-1"
             >
               <Globe size={14} />
-              <span>{language === 'en' ? 'አማርኛ' : 'English'}</span>
+              {language === "en" ? "አማርኛ" : "English"}
             </button>
           </div>
         </div>
