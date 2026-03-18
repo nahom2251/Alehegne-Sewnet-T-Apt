@@ -20,6 +20,7 @@ export const Billing: React.FC<BillingProps> = ({ apartments, bills, onCreateBil
   const { t } = useLanguage();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [newBill, setNewBill] = useState<Partial<Bill>>({
     type: 'rent',
@@ -63,6 +64,19 @@ export const Billing: React.FC<BillingProps> = ({ apartments, bills, onCreateBil
       
       await onUpdateBill({ ...editingBill, amount });
       setEditingBill(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    setLoading(true);
+    try {
+      await onDeleteBill(confirmDelete);
+      setConfirmDelete(null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -173,11 +187,7 @@ export const Billing: React.FC<BillingProps> = ({ apartments, bills, onCreateBil
                           </button>
                         )}
                         <button
-                          onClick={() => {
-                            if (window.confirm(t('confirmDelete'))) {
-                              onDeleteBill(bill.id);
-                            }
-                          }}
+                          onClick={() => setConfirmDelete(bill.id)}
                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                           title={t('delete')}
                         >
@@ -422,6 +432,42 @@ export const Billing: React.FC<BillingProps> = ({ apartments, bills, onCreateBil
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {confirmDelete && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+            >
+              <div className="p-6 text-center">
+                <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center text-red-500 mx-auto mb-4">
+                  <Trash2 size={32} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">{t('confirmDelete')}</h3>
+                <p className="text-gray-500 mb-6">Are you sure you want to delete this bill? This action cannot be undone.</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setConfirmDelete(null)}
+                    className="flex-1 py-3 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-all"
+                  >
+                    {t('cancel')}
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    disabled={loading}
+                    className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all disabled:opacity-50"
+                  >
+                    {loading ? '...' : t('delete')}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

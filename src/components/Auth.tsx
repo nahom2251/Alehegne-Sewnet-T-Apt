@@ -4,14 +4,13 @@ import { Eye, EyeOff, Mail, Lock, User, Globe } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { Logo } from './Logo';
+import { api } from '../services/api';
 
 interface AuthProps {
-  onLogin: (email: string, pass: string) => Promise<void>;
-  onRegister: (email: string, pass: string, name: string) => Promise<void>;
-  onGoogleLogin: () => Promise<void>;
+  onLogin: (user: any) => void;
 }
 
-export const Auth: React.FC<AuthProps> = ({ onLogin, onRegister, onGoogleLogin }) => {
+export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const { t, language, setLanguage } = useLanguage();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -27,22 +26,23 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, onRegister, onGoogleLogin }
     setError(null);
     try {
       if (isLogin) {
-        await onLogin(email, password);
+        const { user } = await api.auth.login({ email, password });
+        onLogin(user);
       } else {
-        await onRegister(email, password, name);
+        await api.auth.register({ email, password, name });
+        setIsLogin(true);
+        setError("Registration successful! Please login.");
       }
     } catch (err: any) {
       console.error('Auth Error:', err);
-      let msg = err.message || 'An error occurred';
-      if (msg.includes('auth/unauthorized-domain')) {
-        msg = 'This domain is not authorized in Firebase. Please add your Render URL to the "Authorized Domains" in the Firebase Console (Authentication > Settings).';
-      } else if (msg.includes('auth/configuration-not-found')) {
-        msg = 'Firebase configuration error. Please check your API key and setup.';
-      }
-      setError(msg);
+      setError(err.message || 'An error occurred');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError("Google login is not supported in this custom backend yet. Please use email/password.");
   };
 
   return (
@@ -142,7 +142,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, onRegister, onGoogleLogin }
 
           <button
             type="button"
-            onClick={onGoogleLogin}
+            onClick={handleGoogleLogin}
             disabled={loading}
             className="w-full py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-3 shadow-sm"
           >

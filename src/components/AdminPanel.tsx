@@ -7,8 +7,8 @@ import { motion } from 'motion/react';
 
 interface AdminPanelProps {
   users: UserProfile[];
-  onApprove: (uid: string) => Promise<void>;
-  onReject: (uid: string) => Promise<void>;
+  onApprove: (id: string) => Promise<void>;
+  onReject: (id: string) => Promise<void>;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ users, onApprove, onReject }) => {
@@ -42,7 +42,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ users, onApprove, onReje
             </thead>
             <tbody className="divide-y divide-gray-100">
               {pendingUsers.map((user) => (
-                <tr key={user.uid} className="hover:bg-gray-50 transition-colors">
+                <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-gold/10 rounded-lg flex items-center justify-center text-gold">
@@ -60,14 +60,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ users, onApprove, onReje
                   <td className="px-6 py-4">
                     <div className="flex justify-end gap-2">
                       <button
-                        onClick={() => onApprove(user.uid)}
+                        onClick={() => onApprove(user.id)}
                         className="flex items-center gap-1 px-3 py-1 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition-all shadow-sm"
                       >
                         <Check size={14} />
                         {t('approve')}
                       </button>
                       <button
-                        onClick={() => onReject(user.uid)}
+                        onClick={() => onReject(user.id)}
                         className="flex items-center gap-1 px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 transition-all shadow-sm"
                       >
                         <X size={14} />
@@ -108,7 +108,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ users, onApprove, onReje
             </thead>
             <tbody className="divide-y divide-gray-100">
               {approvedUsers.map((user) => (
-                <tr key={user.uid} className="hover:bg-gray-50 transition-colors">
+                <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">

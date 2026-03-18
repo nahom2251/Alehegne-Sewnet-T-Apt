@@ -2,7 +2,7 @@ export type UserRole = 'super_admin' | 'admin';
 export type UserStatus = 'pending' | 'approved' | 'rejected';
 
 export interface UserProfile {
-  uid: string;
+  id: string;
   email: string;
   displayName: string;
   role: UserRole;

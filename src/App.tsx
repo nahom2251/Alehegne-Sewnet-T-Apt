@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { api } from './services/api';
 import { UserProfile, Apartment, Bill } from './types';
-import { INITIAL_APARTMENTS } from './constants';
 import { LanguageProvider } from './components/LanguageContext';
 import { Layout } from './components/Layout';
 import { Auth } from './components/Auth';
@@ -23,339 +22,148 @@ export default function App() {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
 
   useEffect(() => {
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
-      } else {
+    const checkAuth = async () => {
+      try {
+        const userData = await api.auth.me();
+        setUser(userData);
+      } catch (err) {
         setUser(null);
+      } finally {
         setLoading(false);
       }
-    });
-
-    return () => subscription.unsubscribe();
+    };
+    checkAuth();
   }, []);
 
-  const fetchUserProfile = async (uid: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('uid', uid)
-        .single();
-
-      if (error) throw error;
-      if (data) {
-        setUser({
-          uid: data.uid,
-          email: data.email,
-          displayName: data.display_name,
-          role: data.role,
-          status: data.status,
-          createdAt: data.created_at,
-          hiddenModules: data.hidden_modules || [],
-        });
-      }
-    } catch (error) {
-      console.error("Error fetching user profile:", error);
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Data Listeners (Realtime)
+  // Data Polling
   useEffect(() => {
     if (!user || user.status !== 'approved') return;
 
-    // Fetch initial data
-    fetchApartments();
-    fetchBills();
-    if (user.role === 'super_admin') fetchAllUsers();
+    const fetchData = async () => {
+      try {
+        const [apts, blls] = await Promise.all([
+          api.apartments.list(),
+          api.bills.list()
+        ]);
+        setApartments(apts);
+        setBills(blls);
 
-    // Set up realtime subscriptions
-    const aptChannel = supabase
-      .channel('apartments-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'apartments' }, () => fetchApartments())
-      .subscribe();
+        if (user.role === 'super_admin') {
+          const users = await api.users.list();
+          setAllUsers(users);
+        }
 
-    const billChannel = supabase
-      .channel('bills-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, () => fetchBills())
-      .subscribe();
-
-    const userChannel = supabase
-      .channel('users-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
-        if (user.role === 'super_admin') fetchAllUsers();
-        fetchUserProfile(user.uid);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(aptChannel);
-      supabase.removeChannel(billChannel);
-      supabase.removeChannel(userChannel);
+        // Refresh current user for status/role changes
+        const me = await api.auth.me();
+        setUser(me);
+      } catch (err) {
+        console.error('Error polling data:', err);
+      }
     };
-  }, [user?.uid, user?.status, user?.role]);
 
-  const fetchApartments = async () => {
-    const { data, error } = await supabase
-      .from('apartments')
-      .select('*')
-      .order('number', { ascending: true });
-    
-    if (error) console.error('Error fetching apartments:', error);
-    else if (data) {
-      setApartments(data.map(a => ({
-        id: a.id,
-        number: a.number,
-        floor: a.floor,
-        position: a.position,
-        tenantName: a.tenant_name || '',
-        tenantPhone: a.tenant_phone || '',
-        moveInDate: a.move_in_date || '',
-        monthlyRent: Number(a.monthly_rent),
-        paymentDuration: a.payment_duration,
-        lastPaymentDate: a.last_payment_date || '',
-      })));
-    }
-  };
+    fetchData();
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
+  }, [user?.id, user?.status, user?.role]);
 
-  const fetchBills = async () => {
-    const { data, error } = await supabase
-      .from('bills')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) console.error('Error fetching bills:', error);
-    else if (data) {
-      setBills(data.map(b => ({
-        id: b.id,
-        apartmentId: b.apartment_id,
-        month: b.month,
-        year: b.year,
-        type: b.type,
-        amount: Number(b.amount),
-        status: b.status,
-        createdAt: b.created_at,
-        paidAt: b.paid_at || undefined,
-        kwh: b.kwh ? Number(b.kwh) : undefined,
-        rate: b.rate ? Number(b.rate) : undefined,
-      })));
-    }
-  };
-
-  const fetchAllUsers = async () => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*');
-    
-    if (error) console.error('Error fetching all users:', error);
-    else if (data) {
-      setAllUsers(data.map(u => ({
-        uid: u.uid,
-        email: u.email,
-        displayName: u.display_name,
-        role: u.role,
-        status: u.status,
-        createdAt: u.created_at,
-        hiddenModules: u.hidden_modules || [],
-      })));
-    }
-  };
-
-  const handleLogin = async (email: string, pass: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (error) throw error;
-  };
-
-  const handleRegister = async (email: string, pass: string, name: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password: pass,
-      options: {
-        data: { full_name: name },
-        emailRedirectTo: window.location.origin,
-      }
-    });
-    if (error) throw error;
-    
-    // The trigger in Supabase (handle_new_user) will create the profile.
-    // We just need to wait or manually fetch.
-    if (data.user) {
-      // Check if it's the first user to seed apartments
-      const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
-      if (count === 1) {
-        await seedInitialApartments();
-      }
-    }
-  };
-
-  const seedInitialApartments = async () => {
-    const aptsToInsert = INITIAL_APARTMENTS.map(apt => ({
-      number: apt.number,
-      floor: apt.floor,
-      position: apt.position,
-      tenant_name: apt.tenantName,
-      tenant_phone: apt.tenantPhone,
-      move_in_date: apt.moveInDate || null,
-      monthly_rent: apt.monthlyRent,
-      payment_duration: apt.paymentDuration,
-    }));
-    const { error } = await supabase.from('apartments').insert(aptsToInsert);
-    if (error) console.error('Error seeding apartments:', error);
-  };
-
-  const handleLogout = () => supabase.auth.signOut();
-
-  const handleGoogleLogin = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-      }
-    });
-    if (error) throw error;
+  const handleLogout = async () => {
+    await api.auth.logout();
+    setUser(null);
   };
 
   const updateApartment = async (apt: Apartment) => {
-    const { error } = await supabase
-      .from('apartments')
-      .update({
-        number: apt.number,
-        floor: apt.floor,
-        position: apt.position,
-        tenant_name: apt.tenantName,
-        tenant_phone: apt.tenantPhone,
-        move_in_date: apt.moveInDate || null,
-        monthly_rent: apt.monthlyRent,
-        payment_duration: apt.paymentDuration,
-        last_payment_date: apt.lastPaymentDate || null,
-      })
-      .eq('id', apt.id);
-    
-    if (error) console.error('Error updating apartment:', error);
+    try {
+      await api.apartments.update(apt.id, apt);
+    } catch (error) {
+      console.error('Error updating apartment:', error);
+    }
   };
 
   const deleteTenant = async (aptId: string) => {
-    const { error } = await supabase
-      .from('apartments')
-      .update({
-        tenant_name: '',
-        tenant_phone: '',
-        move_in_date: null,
-        monthly_rent: 0,
-        payment_duration: 1
-      })
-      .eq('id', aptId);
-    
-    if (error) console.error('Error deleting tenant:', error);
+    try {
+      await api.apartments.update(aptId, {
+        tenantName: '',
+        tenantPhone: '',
+        moveInDate: '',
+        monthlyRent: 0,
+        paymentDuration: 1
+      });
+    } catch (error) {
+      console.error('Error deleting tenant:', error);
+    }
   };
 
   const createBill = async (billData: Partial<Bill>) => {
-    const { error } = await supabase
-      .from('bills')
-      .insert({
-        apartment_id: billData.apartmentId,
-        month: billData.month,
-        year: billData.year,
-        type: billData.type,
-        amount: billData.amount,
-        status: billData.status || 'pending',
-        kwh: billData.kwh,
-        rate: billData.rate,
-      });
-    
-    if (error) console.error('Error creating bill:', error);
+    try {
+      await api.bills.create(billData);
+    } catch (error) {
+      console.error('Error creating bill:', error);
+    }
   };
 
   const markAsPaid = async (billId: string) => {
-    const { error } = await supabase
-      .from('bills')
-      .update({
+    try {
+      await api.bills.update(billId, {
         status: 'paid',
-        paid_at: new Date().toISOString()
-      })
-      .eq('id', billId);
-    
-    if (error) console.error('Error marking bill as paid:', error);
+        paidAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error marking bill as paid:', error);
+    }
   };
 
   const updateBill = async (bill: Bill) => {
-    const { error } = await supabase
-      .from('bills')
-      .update({
-        month: bill.month,
-        year: bill.year,
-        amount: bill.amount,
-        status: bill.status,
-        kwh: bill.kwh,
-        rate: bill.rate,
-      })
-      .eq('id', bill.id);
-    
-    if (error) console.error('Error updating bill:', error);
+    try {
+      await api.bills.update(bill.id, bill);
+    } catch (error) {
+      console.error('Error updating bill:', error);
+    }
   };
 
   const deleteBill = async (billId: string) => {
-    const { error } = await supabase
-      .from('bills')
-      .delete()
-      .eq('id', billId);
-    
-    if (error) console.error('Error deleting bill:', error);
+    try {
+      await api.bills.delete(billId);
+    } catch (error) {
+      console.error('Error deleting bill:', error);
+    }
   };
 
-  const approveUser = async (uid: string) => {
-    const { error } = await supabase
-      .from('users')
-      .update({ status: 'approved' })
-      .eq('uid', uid);
-    
-    if (error) console.error('Error approving user:', error);
+  const approveUser = async (id: string) => {
+    try {
+      await api.users.update(id, { status: 'approved' });
+    } catch (error) {
+      console.error('Error approving user:', error);
+    }
   };
 
-  const rejectUser = async (uid: string) => {
-    const { error } = await supabase
-      .from('users')
-      .update({ status: 'rejected' })
-      .eq('uid', uid);
-    
-    if (error) console.error('Error rejecting user:', error);
+  const rejectUser = async (id: string) => {
+    try {
+      await api.users.update(id, { status: 'rejected' });
+    } catch (error) {
+      console.error('Error rejecting user:', error);
+    }
   };
 
   const clearTenants = async (ids: string[]) => {
-    const { error } = await supabase
-      .from('apartments')
-      .update({
-        tenant_name: '',
-        tenant_phone: '',
-        move_in_date: null,
-        monthly_rent: 0,
-        payment_duration: 1
-      })
-      .in('id', ids);
-    
-    if (error) console.error('Error clearing tenants:', error);
+    try {
+      await Promise.all(ids.map(id => api.apartments.update(id, {
+        tenantName: '',
+        tenantPhone: '',
+        moveInDate: '',
+        monthlyRent: 0,
+        paymentDuration: 1
+      })));
+    } catch (error) {
+      console.error('Error clearing tenants:', error);
+    }
   };
 
   const clearBills = async (ids: string[]) => {
-    const { error } = await supabase
-      .from('bills')
-      .delete()
-      .in('id', ids);
-    
-    if (error) console.error('Error clearing bills:', error);
+    try {
+      await Promise.all(ids.map(id => api.bills.delete(id)));
+    } catch (error) {
+      console.error('Error clearing bills:', error);
+    }
   };
 
   if (loading) {
@@ -369,7 +177,7 @@ export default function App() {
   if (!user) {
     return (
       <LanguageProvider>
-        <Auth onLogin={handleLogin} onRegister={handleRegister} onGoogleLogin={handleGoogleLogin} />
+        <Auth onLogin={setUser} />
       </LanguageProvider>
     );
   }
@@ -384,13 +192,12 @@ export default function App() {
 
   const updateUserPreferences = async (hiddenModules: string[]) => {
     if (!user) return;
-    const { error } = await supabase
-      .from('users')
-      .update({ hidden_modules: hiddenModules })
-      .eq('uid', user.uid);
-    
-    if (error) console.error('Error updating preferences:', error);
-    else setUser({ ...user, hiddenModules });
+    try {
+      await api.users.update(user.id, { hiddenModules });
+      setUser({ ...user, hiddenModules });
+    } catch (error) {
+      console.error('Error updating preferences:', error);
+    }
   };
 
   const renderTab = () => {
