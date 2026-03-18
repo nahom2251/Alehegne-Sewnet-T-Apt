@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: uid, email, displayName, role, status, createdAt
+    //
+    // Collection: apartments
+    // Fields: number, floor, position, tenantName, tenantPhone, moveInDate, monthlyRent, lastPaymentDate
+    //
+    // Collection: bills
+    // Fields: apartmentId, month, year, type, amount, status, createdAt, paidAt, kwh, rate
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isApproved() {
+      return isAuthenticated() && getUserData().status == 'approved';
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        getUserData().role == 'super_admin' ||
+        (request.auth.token.email == "nahomalehegne@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isAdmin() {
+      return isApproved() && (getUserData().role == 'admin' || getUserData().role == 'super_admin');
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'status', 'createdAt']) &&
+             data.uid is string && data.email is string && data.displayName is string &&
+             data.role in ['super_admin', 'admin'] &&
+             data.status in ['pending', 'approved', 'rejected'];
+    }
+
+    function isValidApartment(data) {
+      return data.keys().hasAll(['number', 'floor', 'position']) &&
+             data.number is string && data.floor is string && data.position in ['front', 'back', 'single'];
+    }
+
+    function isValidBill(data) {
+      return data.keys().hasAll(['apartmentId', 'month', 'year', 'type', 'amount', 'status', 'createdAt']) &&
+             data.apartmentId is string && data.month is int && data.year is int &&
+             data.type in ['rent', 'electricity', 'water'] && data.amount is number &&
+             data.status in ['pending', 'paid'];
+    }
+
+    // Rules
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == uid && isValidUser(request.resource.data) &&
+                    (request.resource.data.role == 'admin' || isSuperAdmin());
+      allow update: if isSuperAdmin() && isValidUser(request.resource.data);
+    }
+
+    match /apartments/{aptId} {
+      allow read: if isApproved();
+      allow create: if isSuperAdmin() && isValidApartment(request.resource.data);
+      allow update: if isAdmin() && isValidApartment(request.resource.data);
+      allow delete: if isSuperAdmin();
+    }
+
+    match /bills/{billId} {
+      allow read: if isApproved();
+      allow create: if isAdmin() && isValidBill(request.resource.data);
+      allow update: if isAdmin() && isValidBill(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

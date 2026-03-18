@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile information and status.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["super_admin", "admin"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "status", "createdAt"]
+    },
+    "Apartment": {
+      "title": "Apartment",
+      "description": "Apartment details and tenant information.",
+      "type": "object",
+      "properties": {
+        "number": { "type": "string" },
+        "floor": { "type": "string" },
+        "position": { "type": "string", "enum": ["front", "back", "single"] },
+        "tenantName": { "type": "string" },
+        "tenantPhone": { "type": "string" },
+        "moveInDate": { "type": "string" },
+        "monthlyRent": { "type": "number" },
+        "lastPaymentDate": { "type": "string" }
+      },
+      "required": ["number", "floor", "position"]
+    },
+    "Bill": {
+      "title": "Bill",
+      "description": "Billing record for rent or utilities.",
+      "type": "object",
+      "properties": {
+        "apartmentId": { "type": "string" },
+        "month": { "type": "integer" },
+        "year": { "type": "integer" },
+        "type": { "type": "string", "enum": ["rent", "electricity", "water"] },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "paid"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "paidAt": { "type": "string", "format": "date-time" },
+        "kwh": { "type": "number" },
+        "rate": { "type": "number" }
+      },
+      "required": ["apartmentId", "month", "year", "type", "amount", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "UserProfile",
+      "description": "Collection of user profiles."
+    },
+    "/apartments/{aptId}": {
+      "schema": "Apartment",
+      "description": "Collection of apartments."
+    },
+    "/bills/{billId}": {
+      "schema": "Bill",
+      "description": "Collection of bills."
+    }
+  }
+}

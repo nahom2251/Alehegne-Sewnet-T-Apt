@@ -1,0 +1,21 @@
+{
+  "name": "Alehegne Sewnet Apartment (AS Apt.)",
+  "short_name": "AS Apt.",
+  "description": "Apartment Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#D4AF37",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/asapt192/192/192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/asapt512/512/512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
