@@ -3,6 +3,7 @@ import { useLanguage } from './LanguageContext';
 import { LayoutDashboard, Building2, Receipt, BarChart3, ShieldCheck, Settings, LogOut, Globe, Menu, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { Logo } from './Logo';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -52,12 +53,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
     <div className="flex min-h-screen bg-gray-50">
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 z-30">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gold rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-gold/20">
-            AS
-          </div>
-          <h1 className="font-bold text-gray-900 text-sm">AS Apt.</h1>
-        </div>
+        <Logo size="sm" />
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -84,14 +80,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
         "fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200 p-6 flex flex-col z-50 transition-transform duration-300 transform lg:translate-x-0",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="flex items-center gap-3 mb-10">
-          <div className="w-10 h-10 bg-gold rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-gold/20">
-            AS
-          </div>
-          <div>
-            <h1 className="font-bold text-gray-900 leading-none">AS Apt.</h1>
-            <p className="text-xs text-gray-500 mt-1">Management System</p>
-          </div>
+        <div className="mb-10">
+          <Logo />
         </div>
 
         <nav className="flex-1 space-y-2">

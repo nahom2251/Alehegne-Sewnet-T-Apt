@@ -3,6 +3,7 @@ import { useLanguage } from './LanguageContext';
 import { Eye, EyeOff, Mail, Lock, User, Globe } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
+import { Logo } from './Logo';
 
 interface AuthProps {
   onLogin: (email: string, pass: string) => Promise<void>;
@@ -52,9 +53,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, onRegister, onGoogleLogin }
         <div className="absolute bottom-0 left-0 w-24 h-24 bg-gold/5 rounded-full -ml-12 -mb-12" />
 
         <div className="text-center mb-8 relative">
-          <div className="w-16 h-16 bg-gold rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow-lg shadow-gold/20 mx-auto mb-4">
-            AS
-          </div>
+          <Logo size="lg" className="justify-center mb-6" showText={false} />
           <h1 className="text-2xl font-bold text-gray-900">{t('appName')}</h1>
           <p className="text-gray-500 mt-2">{isLogin ? t('login') : t('register')}</p>
         </div>
